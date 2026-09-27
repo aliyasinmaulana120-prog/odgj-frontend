@@ -1,1 +1,1 @@
-const ODGJ_API_URL="https://GANTI-DENGAN-URL-BACKEND";
+const ODGJ_API_URL="https://https://odgj-backend-production.up.railway.app";
