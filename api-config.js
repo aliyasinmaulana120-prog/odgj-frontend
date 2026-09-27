@@ -1,0 +1,1 @@
+const ODGJ_API_URL="https://GANTI-DENGAN-URL-BACKEND";
