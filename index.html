@@ -152,6 +152,13 @@ h1.title{font-size:clamp(1.6rem,3vw,2rem);line-height:1.25;font-weight:800;margi
 .k3panel li::before{content:"";position:absolute;left:0;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--accent);}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#2f8fd6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ODGJ">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
 </head>
 <body>
 <div class="app">
@@ -509,6 +516,13 @@ function doLogin(){
   if(!u || !p){ err.textContent = 'Username dan password wajib diisi.'; return; }
   err.textContent = '';
   go('welcome');
+}
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
 }
 </script>
 </body>
