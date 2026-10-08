@@ -557,7 +557,7 @@ h1.title{font-size:clamp(1.6rem,3vw,2rem);line-height:1.25;font-weight:800;margi
 
 <!-- SCANNER OVERLAY -->
 <div id="scanOverlay">
-  <div class="scanhead"><h2>Scan QR Aset</h2><button class="closebtn" onclick="closeScanner()">✕</button></div>
+  <div class="scanhead"><h2>Scan QR Aset</h2><button class="closebtn" onclick="backFromScanner()" aria-label="Kembali ke login">✕</button></div>
   <div class="videowrap"><video id="scanVideo" playsinline muted autoplay></video><div class="viewfinder"></div></div>
   <div class="scanstatus" id="scanStatus">Arahkan kamera ke QR pada aset...</div>
   <div class="manualbox">
@@ -1177,10 +1177,20 @@ function doLogin(){
 
 function backFromDetail(){
   if(currentRole === 'OPERATOR'){
+    // Alur Operator: IK -> Scanner
     openScanner();
     return;
   }
   go('list');
+}
+
+// Tombol kembali pada Scanner selalu mengakhiri sesi Operator
+// dan mengembalikan pengguna ke halaman login.
+// Jangan ubah closeScanner() menjadi navigasi karena fungsi tersebut
+// juga dipakai saat hasil scan berhasil dibuka.
+function backFromScanner(){
+  closeScanner();
+  go('login');
 }
 
 /* ---------- OPERATOR QR / BARCODE SCANNER ---------- */
