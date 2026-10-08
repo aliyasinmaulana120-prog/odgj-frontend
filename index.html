@@ -281,6 +281,9 @@ h1.title{font-size:clamp(1.6rem,3vw,2rem);line-height:1.25;font-weight:800;margi
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- ZXing: scanner multi-format untuk QR + barcode 1D/2D -->
+<script src="https://unpkg.com/@zxing/browser@0.2.1/umd/zxing-browser.min.js"></script>
+<!-- Fallback QR scanner -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
 </head>
 <body>
@@ -1180,74 +1183,133 @@ function backFromDetail(){
   go('list');
 }
 
-/* ---------- OPERATOR QR SCANNER ---------- */
+/* ---------- OPERATOR QR / BARCODE SCANNER ---------- */
+let zxingReader = null;
+let zxingControls = null;
 let scanStream = null;
 let scanRAF = null;
 let scanBusy = false;
 
-function openScanner(){
+async function openScanner(){
   const overlay = document.getElementById('scanOverlay');
   const video = document.getElementById('scanVideo');
   const status = document.getElementById('scanStatus');
   const manualErr = document.getElementById('manualErr');
   if(!overlay || !video) return;
 
+  // Bersihkan scanner sebelumnya agar kamera tidak terkunci oleh stream lama.
+  stopScannerEngine();
+
   overlay.classList.add('active');
-  status.textContent = 'Meminta izin kamera...';
+  status.textContent = 'Memulai scanner QR / barcode...';
   manualErr.textContent = '';
   scanBusy = false;
 
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    status.textContent = 'Browser tidak mendukung kamera. Gunakan kode manual.';
+  // HTTPS (Vercel) dibutuhkan agar kamera dapat dipakai di browser.
+  if(!window.isSecureContext && location.hostname !== 'localhost'){
+    status.textContent = 'Kamera membutuhkan koneksi HTTPS. Gunakan kode manual.';
     return;
   }
 
-  navigator.mediaDevices.getUserMedia({
-    video:{
-      facingMode:{ideal:'environment'},
-      width:{ideal:1280},
-      height:{ideal:720}
-    },
-    audio:false
-  }).then(stream=>{
-    scanStream = stream;
-    video.srcObject = stream;
-    video.setAttribute('playsinline','true');
-    video.muted = true;
-    return video.play();
-  }).then(()=>{
-    status.textContent = 'Kamera aktif. Arahkan QR ke kotak scan...';
-    if(scanRAF) cancelAnimationFrame(scanRAF);
-    scanLoop();
-  }).catch(err=>{
-    console.error('Camera error:', err);
-    status.textContent = 'Kamera tidak dapat diakses. Gunakan input kode manual.';
-  });
+  // ---------- PRIMARY: ZXing multi-format ----------
+  if(window.ZXingBrowser && typeof ZXingBrowser.BrowserMultiFormatReader === 'function'){
+    try{
+      zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
+
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 }
+        },
+        audio: false
+      };
+
+      zxingControls = await zxingReader.decodeFromConstraints(
+        constraints,
+        video,
+        (result, error) => {
+          if(result && !scanBusy){
+            scanBusy = true;
+            const text = typeof result.getText === 'function' ? result.getText() : result.text;
+            status.textContent = 'Kode terbaca: ' + text;
+            handleScanResult(text);
+          }
+          // error seperti NotFoundException normal selama belum ada kode.
+        }
+      );
+
+      const track = video.srcObject?.getVideoTracks?.()[0];
+      const label = track?.label || 'kamera belakang/default';
+      status.textContent = 'Scanner aktif — QR & barcode. Kamera: ' + label;
+      return;
+    }catch(err){
+      console.error('ZXing error:', err);
+      stopScannerEngine();
+      status.textContent = 'ZXing gagal dimulai, mencoba scanner QR cadangan...';
+    }
+  }
+
+  // ---------- FALLBACK: jsQR (QR saja) ----------
+  if(navigator.mediaDevices?.getUserMedia && typeof jsQR === 'function'){
+    try{
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video:{
+          facingMode:{ideal:'environment'},
+          width:{ideal:1280},
+          height:{ideal:720}
+        },
+        audio:false
+      });
+      video.srcObject = scanStream;
+      video.setAttribute('playsinline','true');
+      video.muted = true;
+      await video.play();
+      status.textContent = 'Scanner QR aktif. Arahkan QR ke kotak scan...';
+      if(scanRAF) cancelAnimationFrame(scanRAF);
+      scanLoopFallback();
+      return;
+    }catch(err){
+      console.error('Fallback camera error:', err);
+    }
+  }
+
+  status.textContent = 'Kamera tidak dapat diakses. Gunakan input kode manual.';
 }
 
-function closeScanner(){
-  const overlay = document.getElementById('scanOverlay');
-  if(overlay) overlay.classList.remove('active');
-
+function stopScannerEngine(){
+  if(zxingControls){
+    try{ zxingControls.stop(); }catch(e){}
+    zxingControls = null;
+  }
+  if(zxingReader){
+    try{ zxingReader.reset(); }catch(e){}
+    zxingReader = null;
+  }
   if(scanRAF){
     cancelAnimationFrame(scanRAF);
     scanRAF = null;
   }
-
   if(scanStream){
     scanStream.getTracks().forEach(track=>track.stop());
     scanStream = null;
   }
-
   const video = document.getElementById('scanVideo');
   if(video) video.srcObject = null;
   scanBusy = false;
 }
 
-function scanLoop(){
+function closeScanner(){
+  const overlay = document.getElementById('scanOverlay');
+  if(overlay) overlay.classList.remove('active');
+  stopScannerEngine();
+}
+
+function scanLoopFallback(){
   const video = document.getElementById('scanVideo');
   const canvas = document.getElementById('scanCanvas');
-  if(!video || !canvas || !document.getElementById('scanOverlay').classList.contains('active')) return;
+  const overlay = document.getElementById('scanOverlay');
+  if(!video || !canvas || !overlay?.classList.contains('active')) return;
 
   if(video.readyState >= video.HAVE_ENOUGH_DATA && !scanBusy && typeof jsQR === 'function'){
     scanBusy = true;
@@ -1256,10 +1318,9 @@ function scanLoop(){
     const ctx = canvas.getContext('2d',{willReadFrequently:true});
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-    let result = null;
     try{
       const image = ctx.getImageData(0,0,canvas.width,canvas.height);
-      result = jsQR(image.data,image.width,image.height,{inversionAttempts:'attemptBoth'});
+      let result = jsQR(image.data,image.width,image.height,{inversionAttempts:'attemptBoth'});
 
       if(!result){
         const size = Math.min(canvas.width,canvas.height);
@@ -1268,23 +1329,19 @@ function scanLoop(){
         const crop = ctx.getImageData(sx,sy,size,size);
         result = jsQR(crop.data,crop.width,crop.height,{inversionAttempts:'attemptBoth'});
       }
-    }catch(e){
-      console.error('QR decode error:',e);
-    }
 
-    if(result && result.data){
-      scanBusy = false;
-      handleScanResult(result.data);
-      if(document.getElementById('scanOverlay').classList.contains('active')){
-        scanRAF = requestAnimationFrame(scanLoop);
+      if(result?.data){
+        scanBusy = true;
+        handleScanResult(result.data);
+        return;
       }
-      return;
+    }catch(e){
+      console.error('QR fallback decode error:',e);
     }
-
     scanBusy = false;
   }
 
-  scanRAF = requestAnimationFrame(scanLoop);
+  scanRAF = requestAnimationFrame(scanLoopFallback);
 }
 
 function findAssetByCode(code){
@@ -1297,12 +1354,13 @@ function findAssetByCode(code){
 }
 
 function handleScanResult(text){
-  const code = String(text || '').replace(/^ODGJ:/i,'').trim();
+  const raw = String(text || '').trim();
+  const code = raw.replace(/^ODGJ:/i,'').trim().toUpperCase();
   const it = findAssetByCode(code);
   const status = document.getElementById('scanStatus');
 
   if(!it){
-    status.textContent = `QR terbaca: "${text}" — tidak dikenali di sistem, coba lagi...`;
+    status.textContent = `Kode terbaca: "${text}" — tidak dikenali di sistem, coba lagi...`;
     return;
   }
 
