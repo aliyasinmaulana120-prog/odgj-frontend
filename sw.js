@@ -1,8 +1,9 @@
-const CACHE_NAME = "odgj-pwa-v1";
+const CACHE_NAME = "odgj-pwa-v2";
 const CORE = [
   "./",
   "./index.html",
   "./operator.html",
+  "./tma-karedok.html",
   "./manifest.json",
   "./icons/icon-180.png",
   "./icons/icon-192.png",
